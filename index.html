@@ -411,6 +411,28 @@ select.inp{appearance:none;cursor:pointer}
   <button class="nb" id="nb-my" onclick="showScreen('my')"><span class="nb-icon">📋</span>мои</button>
   <button class="nb" id="nb-profile" onclick="showScreen('profile')"><span class="nb-icon">👤</span>профиль</button>
 </nav>
+<!-- ФУТЕР С КОНТАКТАМИ -->
+<div style="text-align:center;padding:16px;font-size:11px;color:var(--text2);border-top:1px solid var(--border);margin-top:16px;background:rgba(3,3,5,.8);backdrop-filter:blur(10px);">
+  <div style="display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;margin-bottom:6px;">
+    <!-- Email с кнопкой копирования -->
+    <span style="display:flex;align-items:center;gap:6px;background:rgba(0,229,255,.05);padding:6px 12px;border-radius:20px;border:1px solid rgba(0,229,255,.1);">
+      <span style="font-size:14px;">📧</span>
+      <a href="mailto:mirrorsecret@proton.me" style="color:var(--cyan);text-decoration:none;border-bottom:1px dashed var(--cyan);">mirrorsecret@proton.me</a>
+      <button onclick="copyText('mirrorsecret@proton.me')" style="background:none;border:none;color:var(--green);cursor:pointer;font-size:12px;padding:4px;" title="Копировать email">📋</button>
+    </span>
+    
+    <span style="color:var(--border2);">|</span>
+    
+    <!-- Telegram канал -->
+    <span style="display:flex;align-items:center;gap:6px;background:rgba(0,229,255,.05);padding:6px 12px;border-radius:20px;border:1px solid rgba(0,229,255,.1);">
+      <span style="font-size:14px;">📢</span>
+      <a href="https://t.me/skolodrop" target="_blank" style="color:var(--cyan);text-decoration:none;border-bottom:1px dashed var(--cyan);">Новости</a>
+    </span>
+  </div>
+  <div style="font-size:9px;color:var(--text2);margin-top:8px;letter-spacing:0.5px;">
+    ⚡ По вопросам, жалобам и предложениям — пиши на почту
+  </div>
+</div>
 </div>
 
 <!-- МОДАЛКИ -->
