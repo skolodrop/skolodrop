@@ -205,7 +205,7 @@ select.inp{appearance:none;cursor:pointer}
     <!-- REGISTER -->
     <div id="auth-reg">
       <div style="font-size:11px;color:var(--text2);line-height:1.8;margin-bottom:16px;background:var(--card);border:1px solid var(--border2);border-radius:6px;padding:10px">
-        🏫 <b style="color:var(--cyan)">Соцсеть</b> — посты, лайки, чат школы<br>
+        🏫 <b style="color:var(--cyan)">Соцсеть</b> — посты, лайки, комментарии, чат школы<br>
         💼 <b style="color:var(--green)">Маркетплейс</b> — заказы, оплата наличными
       </div>
       <div class="field"><label>ПСЕВДОНИМ <span style="color:var(--red)">*</span></label>
@@ -280,7 +280,7 @@ select.inp{appearance:none;cursor:pointer}
   </div>
 
   <!-- POSTS (НОВЫЙ ЭКРАН - ПОСТЫ) -->
-  <div class="screen" id="screen-posts">
+  <div class="screen active" id="screen-posts">
     <div class="sec-head">
       <span class="sec-title">// ЛЕНТА ПОСТОВ</span>
       <span class="sec-sub">
@@ -404,8 +404,8 @@ select.inp{appearance:none;cursor:pointer}
 </div>
 
 <nav id="nav" style="display:none">
+  <button class="nb active" id="nb-posts" onclick="showScreen('posts')"><span class="nb-icon">📱</span>посты</button>
   <button class="nb" id="nb-feed" onclick="showScreen('feed')"><span class="nb-icon">📦</span>заказы</button>
-  <button class="nb" id="nb-posts" onclick="showScreen('posts')"><span class="nb-icon">📱</span>посты</button>
   <button class="nb" id="nb-school" onclick="showScreen('school')"><span class="nb-icon">🏫</span>школа</button>
   <button class="nb-plus" onclick="showScreen('post')"><div class="plus-ring">+</div><span>заказ</span></button>
   <button class="nb" id="nb-my" onclick="showScreen('my')"><span class="nb-icon">📋</span>мои</button>
@@ -640,11 +640,11 @@ function enterApp(){
   document.getElementById('main').style.display='block';
   document.getElementById('nav').style.display='flex';
   document.getElementById('hdr-nick').textContent=P.nick;
-  showScreen('posts'); // По умолчанию показываем посты
+  showScreen('posts');
   renderProfile();
   loadOnlineCount();
   loadSchoolOnline();
-  loadPosts(); // Загружаем посты при входе
+  loadPosts();
 }
 function logout(){
   if(!confirm('Выйти из аккаунта?'))return;
@@ -969,9 +969,8 @@ async function submitReport(){
   catch(e){toast('❌ '+e.message);}
 }
 
-// ── НОВЫЙ РАЗДЕЛ: ПОСТЫ И ЛАЙКИ ─────────────────────────────────────
+// ── ПОСТЫ И КОММЕНТАРИИ ─────────────────────────────────────
 
-// Создание поста
 function openCreatePost(){
   document.getElementById('post-content').value = '';
   document.getElementById('post-media').value = '';
@@ -1003,12 +1002,11 @@ async function createPost(){
     });
     closeModal('modal-create-post');
     toast('✅ Пост опубликован!');
-    loadPosts();
-    loadProfile(); // Обновляем посты в профиле
+    loadPosts(true);
+    loadProfilePosts();
   }catch(e){toast('❌ '+e.message);}
 }
 
-// Загрузка ленты постов
 async function loadPosts(reset = true){
   if(reset){
     currentPostPage = 1;
@@ -1021,17 +1019,16 @@ async function loadPosts(reset = true){
   if(!DB_OK) return;
   
   try{
-    const {data} = await sb.from('posts')
-      .select('*')
-      .eq('school_id', P.schoolId)
-      .order('created_at', {ascending: false})
-      .range((currentPostPage-1)*20, currentPostPage*20 - 1);
+    const url = `${WORKER_URL}/api/feed/posts?school_id=${P.schoolId}&nick=${encodeURIComponent(P.nick)}&page=${currentPostPage}`;
+    const res = await fetch(url);
+    const data = await res.json();
     
     if(!data?.length){
       if(reset){
         list.innerHTML = `<div class="empty"><div class="empty-icon">📭</div><div class="empty-text">Пока нет постов.<br>Будь первым!</div></div>`;
       }
-      document.getElementById('posts-count').textContent = data?.length || 0;
+      document.getElementById('posts-count').textContent = currentPosts.length;
+      hasMorePosts = false;
       return;
     }
     
@@ -1044,98 +1041,174 @@ async function loadPosts(reset = true){
     document.getElementById('posts-count').textContent = currentPosts.length;
     renderPostsList();
     
-    // Проверяем, есть ли еще посты
     if(data.length < 20) hasMorePosts = false;
   } catch(e){
-    list.innerHTML = `<div class="empty"><div class="empty-icon">❌</div><div class="empty-text">${esc(e.message)}</div></div>`;
+    console.error('Error loading posts:', e);
+    list.innerHTML = `<div class="empty"><div class="empty-icon">❌</div><div class="empty-text">Ошибка загрузки постов</div></div>`;
   }
 }
 
-// Рендер списка постов
 function renderPostsList(){
   const list = document.getElementById('posts-list');
   list.innerHTML = currentPosts.map(post => postCard(post)).join('');
 }
 
-// Карточка поста
 function postCard(p){
-  const liked = p.liked_by?.includes(P.nick) || false;
-  const mediaHtml = p.media_url ? `<img class="card-img" src="${esc(p.media_url)}" style="margin-bottom:10px;max-height:250px;" onerror="this.style.display='none'">` : '';
+  const liked = p.liked_by_user || false;
+  const mediaHtml = p.media_url ? `<img class="card-img" src="${esc(p.media_url)}" style="margin-bottom:10px;max-height:250px;object-fit:cover;" onerror="this.style.display='none'">` : '';
   
   return `
-    <div class="order-card" style="margin-bottom:16px;" onclick="openPostModal('${p.id}')">
+    <div class="order-card" style="margin-bottom:16px;cursor:pointer;" onclick="openPostModal('${p.id}')">
       <div class="card-top">
-        <span class="card-meta">${esc(p.author_nick)} · ${timeAgo(p.created_at)}</span>
+        <span class="card-meta" style="color:var(--cyan)">👤 ${esc(p.author_nick)}</span>
+        <span class="card-meta">${timeAgo(p.created_at)}</span>
       </div>
-      <div class="card-title">${esc(p.content).slice(0, 150)}${p.content.length > 150 ? '...' : ''}</div>
+      <div class="card-title" style="margin-bottom:8px;">${esc(p.content).slice(0, 150)}${p.content.length > 150 ? '...' : ''}</div>
       ${mediaHtml}
-      <div class="card-bottom">
-        <span class="card-meta" style="color:var(--yellow)">❤️ ${p.likes || 0}</span>
-        <span class="card-meta">💬 ${p.comments || 0}</span>
+      <div class="card-bottom" style="margin-top:8px;">
+        <span class="card-meta" style="color:var(--yellow);font-size:12px;" onclick="event.stopPropagation();likePost('${p.id}', ${!liked})">
+          ❤️ ${p.likes_count || 0} ${liked ? '(Вам нравится)' : ''}
+        </span>
+        <span class="card-meta" style="color:var(--cyan);font-size:12px;">💬 ${p.comments_count || 0}</span>
       </div>
     </div>
   `;
 }
 
-// Открыть пост в модалке
-async function openPostModal(postId){
-  const {data} = await sb.from('posts').select('*').eq('id', postId).single();
-  if(!data) return;
-  
-  const liked = data.liked_by?.includes(P.nick) || false;
-  const mediaHtml = data.media_url ? `<img class="card-img" src="${esc(data.media_url)}" style="margin-bottom:12px;" onerror="this.style.display='none'">` : '';
-  
-  const isAuthor = data.author_nick === P.nick;
-  const deleteBtn = isAuthor ? `<button class="btn btn-r btn-sm" onclick="deletePost('${data.id}')">🗑️ Удалить</button>` : '';
-  
-  document.getElementById('view-post-content').innerHTML = `
-    <div class="modal-title" style="margin-bottom:8px;">📝 Пост</div>
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-      <span class="card-meta">👤 ${esc(data.author_nick)} · ${timeAgo(data.created_at)}</span>
-      ${deleteBtn}
-    </div>
-    <div style="font-size:13px;color:var(--text);line-height:1.7;margin-bottom:12px;">${esc(data.content)}</div>
-    ${mediaHtml}
-    <div style="display:flex;gap:16px;margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
-      <button class="btn btn-sm ${liked ? 'btn-g' : 'btn-o'}" onclick="likePost('${data.id}', ${!liked})" style="flex:1">
-        ❤️ ${data.likes || 0} ${liked ? ' (Вам нравится)' : ''}
-      </button>
-    </div>
-  `;
-  openModal('modal-view-post');
-}
-
-// Лайк поста
 async function likePost(postId, like){
   try{
-    await api('POST', '/api/posts/like', {
-      post_id: postId,
-      nick: P.nick,
-      like: like
+    const res = await fetch(WORKER_URL + '/api/posts/like', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        post_id: postId,
+        nick: P.nick,
+        like: like
+      })
     });
+    
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error);
+    
+    const postIndex = currentPosts.findIndex(p => p.id === postId);
+    if(postIndex !== -1){
+      currentPosts[postIndex].likes_count = data.likes;
+      currentPosts[postIndex].liked_by_user = like;
+      renderPostsList();
+    }
+    
     toast(like ? '❤️ Лайк поставлен' : '💔 Лайк убран');
-    loadPosts(true);
     closeModal('modal-view-post');
   } catch(e){
     toast('❌ ' + e.message);
   }
 }
 
-// Удаление поста
+async function openPostModal(postId){
+  const post = currentPosts.find(p => p.id === postId);
+  if(!post) return;
+  
+  const liked = post.liked_by_user || false;
+  const mediaHtml = post.media_url ? `<img class="card-img" src="${esc(post.media_url)}" style="margin-bottom:12px;max-height:300px;object-fit:cover;" onerror="this.style.display='none'">` : '';
+  
+  const isAuthor = post.author_nick === P.nick;
+  const deleteBtn = isAuthor ? `<button class="btn btn-r btn-sm" onclick="deletePost('${post.id}')">🗑️ Удалить</button>` : '';
+  
+  let commentsHtml = '';
+  try{
+    const res = await fetch(WORKER_URL + '/api/comments?post_id=' + postId);
+    const comments = await res.json();
+    if(comments && comments.length){
+      commentsHtml = comments.map(c => `
+        <div style="background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:6px;">
+          <div style="font-size:11px;font-weight:700;color:var(--cyan);margin-bottom:2px">${esc(c.author_nick)}</div>
+          <div style="font-size:11px;color:var(--text);margin-bottom:4px">${esc(c.content)}</div>
+          <div style="font-size:9px;color:var(--text2)">${timeAgo(c.created_at)}</div>
+        </div>
+      `).join('');
+    } else {
+      commentsHtml = '<div style="text-align:center;color:var(--text2);padding:12px;">💬 Пока нет комментариев</div>';
+    }
+  } catch(e){
+    commentsHtml = '<div style="color:var(--red);padding:12px;">❌ Ошибка загрузки комментариев</div>';
+  }
+  
+  document.getElementById('view-post-content').innerHTML = `
+    <div class="modal-title" style="margin-bottom:8px;">📝 Пост</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <span class="card-meta" style="color:var(--cyan);font-size:12px;">👤 ${esc(post.author_nick)}</span>
+      <span class="card-meta" style="font-size:11px;">${timeAgo(post.created_at)}</span>
+    </div>
+    <div style="font-size:13px;color:var(--text);line-height:1.7;margin-bottom:12px;white-space:pre-wrap;">${esc(post.content)}</div>
+    ${mediaHtml}
+    
+    <div style="border-top:1px solid var(--border);padding-top:12px;margin-bottom:12px;">
+      <div style="display:flex;gap:16px;margin-bottom:12px;">
+        <button class="btn btn-sm ${liked ? 'btn-g' : 'btn-o'}" onclick="likePost('${post.id}', ${!liked})" style="flex:1">
+          ❤️ ${post.likes_count || 0} ${liked ? '(Вам нравится)' : ''}
+        </button>
+        ${deleteBtn}
+      </div>
+    </div>
+    
+    <div style="margin-bottom:12px;">
+      <div style="font-size:12px;color:var(--cyan);margin-bottom:8px;">💬 Комментарии (${post.comments_count || 0})</div>
+      <div style="max-height:200px;overflow-y:auto;margin-bottom:8px;padding-right:4px;">${commentsHtml}</div>
+      <div class="chat-row">
+        <input class="inp" id="comment-input-${postId}" placeholder="Написать комментарий..." maxlength="500"
+          onkeydown="if(event.key==='Enter')addComment('${postId}')">
+        <button class="btn btn-g btn-sm" onclick="addComment('${postId}')">→</button>
+      </div>
+    </div>
+  `;
+  openModal('modal-view-post');
+}
+
+async function addComment(postId){
+  const input = document.getElementById(`comment-input-${postId}`);
+  const content = input.value.trim();
+  if(!content) return;
+  
+  try{
+    const res = await fetch(WORKER_URL + '/api/comments', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        post_id: postId,
+        nick: P.nick,
+        content: content
+      })
+    });
+    
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error);
+    
+    const postIndex = currentPosts.findIndex(p => p.id === postId);
+    if(postIndex !== -1){
+      currentPosts[postIndex].comments_count = data.comments;
+    }
+    
+    input.value = '';
+    openPostModal(postId);
+    toast('💬 Комментарий добавлен');
+  } catch(e){
+    toast('❌ ' + e.message);
+  }
+}
+
 async function deletePost(postId){
   if(!confirm('Удалить пост?')) return;
   try{
     await api('DELETE', '/api/posts', { id: postId, nick: P.nick });
     toast('✅ Пост удален');
     loadPosts(true);
-    loadProfile();
+    loadProfilePosts();
     closeModal('modal-view-post');
   } catch(e){
     toast('❌ ' + e.message);
   }
 }
 
-// Загрузка постов в профиле
 async function loadProfilePosts(){
   const list = document.getElementById('profile-posts-list');
   list.innerHTML = `<div class="loader"><div class="spin">⟳</div></div>`;
@@ -1156,7 +1229,8 @@ async function loadProfilePosts(){
       <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;cursor:pointer;" onclick="openPostModal('${p.id}')">
         <div style="font-size:12px;">${esc(p.content).slice(0,80)}${p.content.length>80?'...':''}</div>
         <div style="display:flex;gap:12px;margin-top:6px;font-size:10px;color:var(--text2);">
-          <span>❤️ ${p.likes || 0}</span>
+          <span>❤️ ${p.likes_count || 0}</span>
+          <span>💬 ${p.comments_count || 0}</span>
           <span>${timeAgo(p.created_at)}</span>
         </div>
       </div>
@@ -1213,7 +1287,6 @@ function toast(msg){const el=document.getElementById('toast');el.textContent=msg
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function timeAgo(ts){const d=Date.now()-new Date(ts).getTime();if(d<60000)return 'только что';if(d<3600000)return Math.floor(d/60000)+'м назад';if(d<86400000)return Math.floor(d/3600000)+'ч назад';return Math.floor(d/86400000)+'д назад';}
 
-// Добавляем бесконечную прокрутку для постов
 window.addEventListener('scroll', () => {
   if(hasMorePosts && (window.innerHeight + window.scrollY) >= document.body.offsetHeight - 500){
     currentPostPage++;
