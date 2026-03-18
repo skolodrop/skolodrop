@@ -21,7 +21,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .login-box{width:100%;max-width:380px;padding:32px 24px;background:var(--card);border:1px solid var(--border2);border-radius:12px;text-align:center}
 .login-logo{font-family:var(--hud);font-size:20px;font-weight:900;color:var(--red);letter-spacing:4px;text-shadow:0 0 20px rgba(255,34,68,.5);margin-bottom:6px}
 .login-sub{font-size:10px;color:var(--text2);letter-spacing:2px;margin-bottom:28px}
-#admin-screen{display:none;position:relative;z-index:1;padding:20px;max-width:960px;margin:0 auto}
+#admin-screen{display:none;position:relative;z-index:1;padding:20px;max-width:1200px;margin:0 auto}
 .admin-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:rgba(2,2,4,.96);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50;backdrop-filter:blur(16px);margin:-20px -20px 20px}
 .admin-logo{font-family:var(--hud);font-size:14px;font-weight:900;color:var(--red);letter-spacing:3px}
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:20px}
@@ -66,6 +66,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .btn-g:hover{box-shadow:0 0 14px rgba(0,255,136,.4)}
 .btn-o{background:transparent;color:var(--text);border:1px solid var(--border2)}
 .btn-o:hover{border-color:var(--green);color:var(--green)}
+.btn-sm{padding:5px 10px;font-size:10px}
 .inp{width:100%;background:var(--s1);border:1px solid var(--border2);border-radius:5px;padding:10px 12px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;transition:border-color .2s}
 .inp:focus{border-color:var(--red)}
 .field{margin-bottom:12px}
@@ -94,7 +95,10 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 <div id="admin-screen">
   <div class="admin-header">
     <div class="admin-logo">⚡ SKOLODROP ADMIN v6</div>
-    <button class="btn btn-o" onclick="doLogout()">выйти</button>
+    <div style="display:flex;gap:10px;align-items:center">
+      <span style="font-size:10px;color:var(--cyan)" id="online-count-header">👥 <span id="online-count">0</span></span>
+      <button class="btn btn-o btn-sm" onclick="doLogout()">выйти</button>
+    </div>
   </div>
 
   <div class="stats-grid">
@@ -106,15 +110,16 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
     <div class="stat-card" onclick="switchTab('reports')"><div class="stat-val s-r" id="st-reports">–</div><div class="stat-lbl">ЖАЛОБ</div></div>
     <div class="stat-card" onclick="switchTab('schools')"><div class="stat-val s-p" id="st-schools">–</div><div class="stat-lbl">ШКОЛ</div></div>
     <div class="stat-card" onclick="switchTab('schools')"><div class="stat-val s-g" id="st-users">–</div><div class="stat-lbl">ПОЛЬЗОВАТЕЛЕЙ</div></div>
-    <div class="stat-card" onclick="loadOnlineCount()"><div class="stat-val s-g" id="online-count">–</div><div class="stat-lbl">ОНЛАЙН</div></div>
+    <div class="stat-card" onclick="loadOnlineCount()"><div class="stat-val s-g" id="online-count-stat">–</div><div class="stat-lbl">ОНЛАЙН</div></div>
   </div>
 
   <div class="tabs">
-    <div class="tab" onclick="switchTab('schools')">🏫 Школы</div>
+    <div class="tab on" onclick="switchTab('schools')">🏫 Школы</div>
     <div class="tab" onclick="switchTab('posts')">📱 Посты</div>
     <div class="tab" onclick="switchTab('orders')">📋 Заказы</div>
     <div class="tab" onclick="switchTab('reports')">🚩 Жалобы</div>
-    <div class="tab" onclick="switchTab('ban')">⛔ Бан</div>
+    <div class="tab" onclick="switchTab('ban')">⛔ Бан / Удаление</div>
+    <div class="tab" onclick="switchTab('search')">🔍 Поиск</div>
   </div>
 
   <div id="admin-content"></div>
@@ -134,7 +139,11 @@ async function doLogin(){
   const pass=document.getElementById('login-pass').value.trim();
   if(!pass) return;
   try{
-    const res=await fetch(WORKER_URL+'/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({secret:pass})});
+    const res=await fetch(WORKER_URL+'/api/admin/login',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({secret:pass})
+    });
     const d=await res.json();
     if(!res.ok){toast('❌ '+d.error);return;}
     adminToken=d.token;
@@ -142,91 +151,358 @@ async function doLogin(){
     showAdmin();
   }catch(e){toast('❌ '+e.message);}
 }
+
 function doLogout(){
-  sessionStorage.removeItem('admin_token');adminToken='';
+  sessionStorage.removeItem('admin_token');
+  adminToken='';
   document.getElementById('login-screen').style.display='flex';
   document.getElementById('admin-screen').style.display='none';
 }
+
 function showAdmin(){
   document.getElementById('login-screen').style.display='none';
   document.getElementById('admin-screen').style.display='block';
-  loadStats();loadTab('schools');
+  loadStats();
+  loadTab('schools');
   loadOnlineCount();
   setInterval(loadOnlineCount, 30000);
 }
+
 async function adminApi(method,path,body){
-  const res=await fetch(WORKER_URL+path,{method,headers:{'Content-Type':'application/json','Authorization':'Bearer '+adminToken},body:body?JSON.stringify(body):undefined});
+  const res=await fetch(WORKER_URL+path,{
+    method,
+    headers:{
+      'Content-Type':'application/json',
+      'Authorization':'Bearer '+adminToken
+    },
+    body:body?JSON.stringify(body):undefined
+  });
   const d=await res.json().catch(()=>({}));
-  if(!res.ok) throw new Error(d.error||'Ошибка');
+  if(!res.ok) throw new Error(d.error||'Ошибка '+res.status);
   return d;
 }
+
 async function loadStats(){
   try{
     const s=await adminApi('GET','/api/admin/stats');
-    document.getElementById('st-orders').textContent=s.orders.total;
-    document.getElementById('st-open').textContent=s.orders.open;
-    document.getElementById('st-taken').textContent=s.orders.taken;
-    document.getElementById('st-done').textContent=s.orders.done;
-    document.getElementById('st-posts').textContent=s.posts;
-    document.getElementById('st-reports').textContent=s.reports.unresolved+' новых';
-    document.getElementById('st-schools').textContent=s.schools.length;
-    document.getElementById('st-users').textContent=s.total_users;
+    document.getElementById('st-orders').textContent=s.orders?.total || 0;
+    document.getElementById('st-open').textContent=s.orders?.open || 0;
+    document.getElementById('st-taken').textContent=s.orders?.taken || 0;
+    document.getElementById('st-done').textContent=s.orders?.done || 0;
+    document.getElementById('st-posts').textContent=s.posts || 0;
+    document.getElementById('st-reports').textContent=(s.reports?.unresolved||0)+' новых';
+    document.getElementById('st-schools').textContent=s.schools?.length || 0;
+    document.getElementById('st-users').textContent=s.total_users || 0;
   }catch(e){toast('❌ '+e.message);}
 }
+
 async function loadOnlineCount(){
   try{
     const res = await fetch(WORKER_URL+'/api/online');
     const data = await res.json();
-    document.getElementById('online-count').textContent = data.count;
+    document.getElementById('online-count').textContent = data.count || 0;
+    document.getElementById('online-count-stat').textContent = data.count || 0;
   }catch(e){}
 }
 
 function switchTab(tab){
   currentTab=tab;
   document.querySelectorAll('.tab').forEach((t,i)=>{
-    const tabs=['schools','posts','orders','reports','ban'];
+    const tabs=['schools','posts','orders','reports','ban','search'];
     t.classList.toggle('on',tabs[i]===tab);
   });
   loadTab(tab);
 }
+
 async function loadTab(tab){
   const c=document.getElementById('admin-content');
   c.innerHTML=`<div class="loader"><span class="spin">⟳</span> загрузка...</div>`;
-  if(tab==='schools') await renderSchools(c);
-  if(tab==='posts') await renderPosts(c);
-  if(tab==='orders') await renderOrders(c);
-  if(tab==='reports') await renderReports(c);
-  if(tab==='ban') renderBan(c);
+  
+  try{
+    if(tab==='schools') await renderSchools(c);
+    if(tab==='posts') await renderPosts(c);
+    if(tab==='orders') await renderOrders(c);
+    if(tab==='reports') await renderReports(c);
+    if(tab==='ban') renderBan(c);
+    if(tab==='search') renderSearch(c);
+  }catch(e){
+    c.innerHTML=`<div class="empty">❌ ${esc(e.message)}</div>`;
+  }
 }
 
-// Школы
+// ========== ШКОЛЫ (УЛУЧШЕНО) ==========
 async function renderSchools(c){
   try{
     const s=await adminApi('GET','/api/admin/stats');
     const schools=s.schools||[];
-    if(!schools.length){c.innerHTML='<div class="empty">Школ пока нет</div>';return;}
-    c.innerHTML=`<div class="sec-title">// ШКОЛЫ (${schools.length})</div>`+
-      schools.map(school=>`
-        <div class="school-card">
-          <div class="school-ico">🏫</div>
-          <div style="flex:1">
-            <div style="font-size:13px;color:var(--text);margin-bottom:3px">${esc(school.name)}</div>
-            <div style="font-size:10px;color:var(--text2)">👥 ${school.members} участников · 🟢 ${school.online || 0} онлайн</div>
+    
+    if(!schools.length){
+      c.innerHTML='<div class="empty">Школ пока нет</div>';
+      return;
+    }
+    
+    // Сортируем по количеству участников
+    schools.sort((a,b)=> (b.members||0) - (a.members||0));
+    
+    let html = `<div class="sec-title">// ШКОЛЫ (${schools.length})</div>`;
+    
+    // Кнопка создать школу прямо из админки
+    html += `<button class="btn btn-g btn-sm" style="margin-bottom:12px" onclick="showCreateSchoolForm()">➕ СОЗДАТЬ ШКОЛУ</button>`;
+    
+    html += schools.map(school=>`
+      <div class="school-card">
+        <div class="school-ico">🏫</div>
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+            <span style="font-size:13px;color:var(--text);font-weight:700">${esc(school.name)}</span>
+            <span class="badge ${school.members > 0 ? 'b-open' : 'b-done'}">👥 ${school.members || 0}</span>
           </div>
-          <div style="display:flex;gap:6px">
-            <button class="btn btn-o btn-sm" onclick="viewSchoolChat(${school.id},'${esc(school.name)}')">💬 Чат</button>
-            <button class="btn btn-o btn-sm" onclick="viewSchoolUsers(${school.id},'${esc(school.name)}')">👤 Участники</button>
-            <button class="btn btn-r btn-sm" onclick="deleteSchool(${school.id},'${esc(school.name)}')">🗑</button>
+          <div style="font-size:10px;color:var(--text2);margin-bottom:4px">
+            🆔 ID: ${school.id} · 📍 ${school.city || 'город не указан'}
           </div>
-        </div>`).join('');
-  }catch(e){c.innerHTML=`<div class="empty">❌ ${esc(e.message)}</div>`;}
+          <div style="display:flex;gap:10px;font-size:10px">
+            <span style="color:var(--green)">🟢 ${school.online || 0} онлайн</span>
+            <span style="color:var(--cyan)}">📱 постов: ${school.posts_count || 0}</span>
+            <span style="color:var(--yellow)}">📦 заказов: ${school.orders_count || 0}</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+          <button class="btn btn-o btn-sm" onclick="viewSchoolUsers(${school.id},'${esc(school.name)}')">👥 (${school.members||0})</button>
+          <button class="btn btn-o btn-sm" onclick="viewSchoolChat(${school.id},'${esc(school.name)}')">💬 Чат</button>
+          <button class="btn btn-o btn-sm" onclick="viewSchoolOrders(${school.id},'${esc(school.name)}')">📦 Заказы</button>
+          <button class="btn btn-o btn-sm" onclick="editSchool(${school.id},'${esc(school.name)}','${esc(school.city||'')}','${esc(school.address||'')}')">✏️</button>
+          <button class="btn btn-r btn-sm" onclick="deleteSchool(${school.id},'${esc(school.name)}')">🗑</button>
+        </div>
+      </div>`).join('');
+    
+    c.innerHTML = html;
+  }catch(e){
+    c.innerHTML=`<div class="empty">❌ ${esc(e.message)}</div>`;
+  }
 }
 
-// ПОСТЫ (новый раздел)
+// Форма создания школы
+function showCreateSchoolForm(){
+  const c=document.getElementById('admin-content');
+  c.innerHTML=`
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <button class="btn btn-o btn-sm" onclick="loadTab('schools')">← Назад к школам</button>
+    </div>
+    <div style="background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:20px;max-width:500px;margin:0 auto">
+      <div class="sec-title" style="text-align:center">// СОЗДАТЬ НОВУЮ ШКОЛУ</div>
+      <div class="field"><label>НАЗВАНИЕ ШКОЛЫ *</label>
+        <input class="inp" id="new-school-name" placeholder="СОШ №5, Москва">
+      </div>
+      <div class="field"><label>ГОРОД</label>
+        <input class="inp" id="new-school-city" placeholder="Москва">
+      </div>
+      <div class="field"><label>АДРЕС</label>
+        <input class="inp" id="new-school-address" placeholder="ул. Ленина, 10">
+      </div>
+      <button class="btn btn-g" style="width:100%;margin-bottom:8px" onclick="createSchool()">✅ СОЗДАТЬ</button>
+      <button class="btn btn-o" style="width:100%" onclick="loadTab('schools')">Отмена</button>
+    </div>
+  `;
+}
+
+async function createSchool(){
+  const name = document.getElementById('new-school-name').value.trim();
+  const city = document.getElementById('new-school-city').value.trim();
+  const address = document.getElementById('new-school-address').value.trim();
+  
+  if(!name){ toast('⚠️ Введите название школы'); return; }
+  
+  try{
+    await adminApi('POST','/api/admin/schools/create', { name, city, address });
+    toast('✅ Школа создана');
+    loadTab('schools');
+    loadStats();
+  }catch(e){ toast('❌ '+e.message); }
+}
+
+async function editSchool(id, currentName, currentCity, currentAddress){
+  const c=document.getElementById('admin-content');
+  c.innerHTML=`
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <button class="btn btn-o btn-sm" onclick="loadTab('schools')">← Назад к школам</button>
+    </div>
+    <div style="background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:20px;max-width:500px;margin:0 auto">
+      <div class="sec-title" style="text-align:center">// РЕДАКТИРОВАТЬ ШКОЛУ</div>
+      <div class="field"><label>НАЗВАНИЕ ШКОЛЫ</label>
+        <input class="inp" id="edit-school-name" value="${esc(currentName)}">
+      </div>
+      <div class="field"><label>ГОРОД</label>
+        <input class="inp" id="edit-school-city" value="${esc(currentCity)}">
+      </div>
+      <div class="field"><label>АДРЕС</label>
+        <input class="inp" id="edit-school-address" value="${esc(currentAddress)}">
+      </div>
+      <button class="btn btn-g" style="width:100%;margin-bottom:8px" onclick="updateSchool(${id})">💾 СОХРАНИТЬ</button>
+      <button class="btn btn-o" style="width:100%" onclick="loadTab('schools')">Отмена</button>
+    </div>
+  `;
+}
+
+async function updateSchool(id){
+  const name = document.getElementById('edit-school-name').value.trim();
+  const city = document.getElementById('edit-school-city').value.trim();
+  const address = document.getElementById('edit-school-address').value.trim();
+  
+  if(!name){ toast('⚠️ Введите название школы'); return; }
+  
+  try{
+    await adminApi('PUT',`/api/admin/schools/${id}`, { name, city, address });
+    toast('✅ Школа обновлена');
+    loadTab('schools');
+  }catch(e){ toast('❌ '+e.message); }
+}
+
+async function viewSchoolOrders(schoolId, schoolName){
+  const c=document.getElementById('admin-content');
+  c.innerHTML=`<div class="loader"><span class="spin">⟳</span> загрузка заказов...</div>`;
+  
+  try{
+    const orders = await adminApi('GET', `/api/admin/school-orders?school_id=${schoolId}`);
+    
+    let html = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <button class="btn btn-o btn-sm" onclick="loadTab('schools')">← Назад</button>
+      <span style="font-family:var(--hud);font-size:12px;color:var(--cyan)">🏫 ${esc(schoolName)} — заказы</span>
+    </div>`;
+    
+    if(!orders || !orders.length){
+      html += '<div class="empty">В этой школе пока нет заказов</div>';
+      c.innerHTML = html;
+      return;
+    }
+    
+    html += orders.map(o=>`
+      <div class="row-card">
+        <div class="row-body">
+          <div class="row-title">${esc(o.title)}</div>
+          <div class="row-meta">
+            <span class="badge ${o.status==='open'?'b-open':o.status==='taken'?'b-taken':'b-done'}">${o.status}</span>
+            👤 ${esc(o.author_nick)} · 💰 ${o.amount} ₽ · 📅 ${timeAgo(o.created_at)}
+          </div>
+        </div>
+        <button class="btn btn-r btn-sm" onclick="delOrder('${o.id}')">🗑</button>
+      </div>
+    `).join('');
+    
+    c.innerHTML = html;
+  }catch(e){
+    c.innerHTML = `<div class="empty">❌ ${esc(e.message)}</div>`;
+  }
+}
+
+async function viewSchoolUsers(schoolId, schoolName){
+  const c=document.getElementById('admin-content');
+  c.innerHTML=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+    <button class="btn btn-o btn-sm" onclick="loadTab('schools')">← Назад</button>
+    <span style="font-family:var(--hud);font-size:12px;color:var(--cyan)">🏫 ${esc(schoolName)} — участники</span>
+    <span style="font-size:10px;color:var(--green)" id="online-in-school">загрузка...</span>
+  </div>
+  <div class="loader"><span class="spin">⟳</span></div>`;
+
+  try{
+    const users = await adminApi('GET', `/api/admin/school-users?school_id=${schoolId}`);
+    
+    if(!users || !users.length){
+      c.querySelector('.loader').outerHTML='<div class="empty">👥 В этой школе пока нет учеников</div>';
+      return;
+    }
+
+    const now = Date.now();
+    let onlineCount = 0;
+    
+    const list = users.map(u=>{
+      const isOnline = u.last_seen && (now - new Date(u.last_seen).getTime() < 5*60*1000);
+      if(isOnline) onlineCount++;
+      return `
+        <div class="user-card">
+          <div class="user-avatar">${esc((u.nick||'?')[0].toUpperCase())}</div>
+          <div class="user-info">
+            <div class="user-nick">${esc(u.nick)}</div>
+            <div class="user-meta">
+              📅 с ${u.created_at ? new Date(u.created_at).toLocaleDateString('ru') : 'неизвестно'}
+              ${u.wallet ? ` · 💳 ${esc(u.wallet)}` : ''}
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end">
+            <span><span class="status-dot ${isOnline ? 'dot-online' : 'dot-offline'}"></span>${isOnline ? 'онлайн' : 'офлайн'}</span>
+            <button class="btn btn-r btn-sm" style="margin-top:5px" onclick="banUser('${esc(u.nick)}')">⛔ Бан</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    document.getElementById('online-in-school').textContent = `🟢 онлайн: ${onlineCount}`;
+    c.querySelector('.loader').outerHTML = list;
+  }catch(e){
+    c.querySelector('.loader').outerHTML = `<div class="empty">❌ ${esc(e.message)}</div>`;
+  }
+}
+
+async function viewSchoolChat(schoolId, schoolName){
+  const c=document.getElementById('admin-content');
+  c.innerHTML=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+    <button class="btn btn-o btn-sm" onclick="loadTab('schools')">← Назад</button>
+    <span style="font-family:var(--hud);font-size:12px;color:var(--cyan)">💬 Чат школы ${esc(schoolName)}</span>
+  </div>
+  <div class="loader"><span class="spin">⟳</span></div>`;
+  
+  try{
+    const data=await adminApi('GET',`/api/admin/school-chat?school_id=${schoolId}`);
+    const msgs=Array.isArray(data)?data:[];
+    
+    if(!msgs.length){
+      c.querySelector('.loader').innerHTML='<div class="empty">Сообщений нет</div>';
+      return;
+    }
+    
+    const list=msgs.map(m=>`
+      <div class="row-card">
+        <div class="row-body">
+          <div style="font-size:11px;font-weight:700;color:var(--cyan);margin-bottom:3px">${esc(m.nick)}</div>
+          <div style="font-size:12px;color:var(--text)">${esc(m.message)}</div>
+          <div style="font-size:10px;color:var(--text2);margin-top:3px">${timeAgo(m.created_at)}</div>
+        </div>
+        <button class="btn btn-r btn-sm" onclick="deleteSchoolMsg('${m.id}',${schoolId},'${esc(schoolName)}')">🗑</button>
+      </div>`).join('');
+      
+    c.querySelector('.loader').outerHTML=list;
+  }catch(e){
+    c.querySelector('.loader').innerHTML=`<div class="empty">❌ ${esc(e.message)}</div>`;
+  }
+}
+
+async function deleteSchoolMsg(id,schoolId,schoolName){
+  if(!confirm('Удалить сообщение?')) return;
+  try{
+    await adminApi('DELETE',`/api/admin/school-msg/${id}`);
+    toast('🗑 Удалено');
+    viewSchoolChat(schoolId,schoolName);
+  }catch(e){toast('❌ '+e.message);}
+}
+
+async function deleteSchool(id,name){
+  if(!confirm(`Удалить школу "${name}" и всех её учеников? Это действие необратимо.`)) return;
+  try{
+    await adminApi('DELETE',`/api/admin/school?id=${id}`);
+    toast('✅ Школа удалена');
+    loadStats();
+    loadTab('schools');
+  }catch(e){toast('❌ '+e.message);}
+}
+
+// ========== ПОСТЫ ==========
 async function renderPosts(c){
   try{
     const posts=await adminApi('GET','/api/admin/posts');
-    if(!posts.length){c.innerHTML='<div class="empty">Постов нет</div>';return;}
+    if(!posts.length){
+      c.innerHTML='<div class="empty">Постов нет</div>';
+      return;
+    }
+    
     c.innerHTML=`<div class="sec-title">// ВСЕ ПОСТЫ (${posts.length})</div>`+
       posts.map(p=>`
         <div class="post-card">
@@ -242,7 +518,9 @@ async function renderPosts(c){
             <button class="btn btn-r btn-sm" onclick="deletePost('${p.id}')">🗑 Удалить</button>
           </div>
         </div>`).join('');
-  }catch(e){c.innerHTML=`<div class="empty">❌ ${esc(e.message)}</div>`;}
+  }catch(e){
+    c.innerHTML=`<div class="empty">❌ ${esc(e.message)}</div>`;
+  }
 }
 
 async function deletePost(id){
@@ -255,86 +533,15 @@ async function deletePost(id){
   }catch(e){toast('❌ '+e.message);}
 }
 
-async function viewSchoolUsers(schoolId,schoolName){
-  const c=document.getElementById('admin-content');
-  c.innerHTML=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-    <button class="btn btn-o btn-sm" onclick="loadTab('schools')">← Назад</button>
-    <span style="font-family:var(--hud);font-size:12px;color:var(--cyan)">🏫 ${esc(schoolName)}</span>
-  </div>
-  <div class="loader"><span class="spin">⟳</span> загрузка...</div>`;
-
-  try{
-    const users = await adminApi('GET', `/api/admin/school-users?school_id=${schoolId}`);
-    
-    if(!users || !users.length){
-      c.querySelector('.loader').outerHTML='<div class="empty">👥 В этой школе пока нет учеников</div>';
-      return;
-    }
-
-    const now = Date.now();
-    const list = users.map(u=>{
-      const isOnline = u.last_seen && (now - new Date(u.last_seen).getTime() < 5*60*1000);
-      return `
-        <div class="user-card">
-          <div class="user-avatar">${esc(u.nick[0].toUpperCase())}</div>
-          <div class="user-info">
-            <div class="user-nick">${esc(u.nick)}</div>
-            <div class="user-meta">с нами с ${new Date(u.created_at).toLocaleDateString('ru')}</div>
-          </div>
-          <div><span class="status-dot ${isOnline ? 'dot-online' : 'dot-offline'}"></span>${isOnline ? 'онлайн' : 'офлайн'}</div>
-        </div>
-      `;
-    }).join('');
-
-    c.querySelector('.loader').outerHTML = list;
-  }catch(e){
-    c.querySelector('.loader').outerHTML = `<div class="empty">❌ ${esc(e.message)}</div>`;
-  }
-}
-async function deleteSchool(id,name){
-  if(!confirm(`Удалить школу "${name}" и всех её учеников? Это действие необратимо.`)) return;
-  try{
-    await adminApi('DELETE',`/api/admin/school?id=${id}`);
-    toast('✅ Школа удалена');
-    loadStats();loadTab('schools');
-  }catch(e){toast('❌ '+e.message);}
-}
-
-async function viewSchoolChat(schoolId,schoolName){
-  const c=document.getElementById('admin-content');
-  c.innerHTML=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-    <button class="btn btn-o btn-sm" onclick="loadTab('schools')">← Назад</button>
-    <span style="font-family:var(--hud);font-size:12px;color:var(--cyan)">🏫 ${esc(schoolName)}</span>
-  </div>
-  <div class="loader"><span class="spin">⟳</span></div>`;
-  try{
-    const data=await adminApi('GET',`/api/admin/school-chat?school_id=${schoolId}`);
-    const msgs=Array.isArray(data)?data:[];
-    if(!msgs.length){c.querySelector('.loader').innerHTML='<div class="empty">Сообщений нет</div>';return;}
-    const list=msgs.map(m=>`
-      <div class="row-card">
-        <div class="row-body">
-          <div style="font-size:11px;font-weight:700;color:var(--cyan);margin-bottom:3px">${esc(m.nick)}</div>
-          <div style="font-size:12px;color:var(--text)">${esc(m.message)}</div>
-          <div style="font-size:10px;color:var(--text2);margin-top:3px">${timeAgo(m.created_at)}</div>
-        </div>
-        <button class="btn btn-r btn-sm" onclick="deleteSchoolMsg('${m.id}',${schoolId},'${esc(schoolName)}')">🗑</button>
-      </div>`).join('');
-    c.querySelector('.loader').outerHTML=list;
-  }catch(e){c.innerHTML+=`<div class="empty">❌ ${esc(e.message)}</div>`;}
-}
-async function deleteSchoolMsg(id,schoolId,schoolName){
-  if(!confirm('Удалить сообщение?')) return;
-  try{
-    await adminApi('DELETE',`/api/admin/school-msg/${id}`);
-    toast('🗑 Удалено');viewSchoolChat(schoolId,schoolName);
-  }catch(e){toast('❌ '+e.message);}
-}
-
+// ========== ЗАКАЗЫ ==========
 async function renderOrders(c){
   try{
     const orders=await adminApi('GET','/api/admin/orders');
-    if(!orders.length){c.innerHTML='<div class="empty">Заказов нет</div>';return;}
+    if(!orders.length){
+      c.innerHTML='<div class="empty">Заказов нет</div>';
+      return;
+    }
+    
     c.innerHTML=`<div class="sec-title">// ВСЕ ЗАКАЗЫ (${orders.length})</div>`+
       orders.map(o=>`
         <div class="row-card">
@@ -342,44 +549,66 @@ async function renderOrders(c){
             <div class="row-title">${esc(o.title)}</div>
             <div class="row-meta">
               <span class="badge ${o.status==='open'?'b-open':o.status==='taken'?'b-taken':'b-done'}">${o.status}</span>
-              &nbsp;${esc(o.author_nick)} · ${esc(o.amount)} ₽ · ${o.school_name?'🏫 '+esc(o.school_name)+' · ':''} ${timeAgo(o.created_at)}
+              👤 ${esc(o.author_nick)} · 💰 ${o.amount} ₽ · 🏫 ${esc(o.school_name||'нет школы')} · ${timeAgo(o.created_at)}
             </div>
           </div>
           <div class="row-actions">
-            <button class="btn btn-r" onclick="delOrder('${o.id}')">🗑</button>
-            <button class="btn" style="background:rgba(255,107,0,.1);color:var(--orange);border:1px solid rgba(255,107,0,.25)" onclick="banUser('${esc(o.author_nick)}')">⛔</button>
+            <button class="btn btn-r btn-sm" onclick="delOrder('${o.id}')">🗑</button>
+            <button class="btn btn-sm" style="background:rgba(255,107,0,.1);color:var(--orange);border:1px solid rgba(255,107,0,.25)" onclick="banUser('${esc(o.author_nick)}')">⛔</button>
           </div>
         </div>`).join('');
-  }catch(e){c.innerHTML=`<div class="empty">❌ ${esc(e.message)}</div>`;}
-}
-async function delOrder(id){
-  if(!confirm('Удалить?')) return;
-  try{await adminApi('DELETE',`/api/admin/orders/${id}`);toast('🗑 Удалено');loadStats();loadTab('orders');}
-  catch(e){toast('❌ '+e.message);}
+  }catch(e){
+    c.innerHTML=`<div class="empty">❌ ${esc(e.message)}</div>`;
+  }
 }
 
+async function delOrder(id){
+  if(!confirm('Удалить заказ?')) return;
+  try{
+    await adminApi('DELETE',`/api/admin/orders/${id}`);
+    toast('🗑 Удалено');
+    loadStats();
+    loadTab('orders');
+  }catch(e){toast('❌ '+e.message);}
+}
+
+// ========== ЖАЛОБЫ ==========
 async function renderReports(c){
   try{
     const reports=await adminApi('GET','/api/admin/reports');
-    if(!reports.length){c.innerHTML='<div class="empty">✅ Жалоб нет</div>';return;}
+    if(!reports.length){
+      c.innerHTML='<div class="empty">✅ Жалоб нет</div>';
+      return;
+    }
+    
     c.innerHTML=`<div class="sec-title">// ЖАЛОБЫ (${reports.length})</div>`+
       reports.map(r=>`
         <div class="rep-card">
           <div style="font-size:12px;color:var(--text);margin-bottom:6px">${esc(r.reason)}</div>
-          <div style="font-size:10px;color:var(--text2);margin-bottom:10px">от ${esc(r.reporter_nick)} · ${timeAgo(r.created_at)}</div>
+          <div style="font-size:10px;color:var(--text2);margin-bottom:10px">
+            от ${esc(r.reporter_nick)} · на заказ #${r.order_id} · ${timeAgo(r.created_at)}
+          </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button class="btn btn-r" onclick="delOrder('${r.order_id}')">🗑 Удалить заказ</button>
-            <button class="btn" style="background:rgba(255,107,0,.1);color:var(--orange);border:1px solid rgba(255,107,0,.25)" onclick="banUser('${esc(r.reporter_nick)}')">⛔ Бан</button>
-            <button class="btn btn-g" onclick="resolveReport('${r.id}')">✅ Закрыть</button>
+            <button class="btn btn-r btn-sm" onclick="delOrder('${r.order_id}')">🗑 Удалить заказ</button>
+            <button class="btn btn-sm" style="background:rgba(255,107,0,.1);color:var(--orange);border:1px solid rgba(255,107,0,.25)" onclick="banUser('${esc(r.reporter_nick)}')">⛔ Бан репортера</button>
+            <button class="btn btn-g btn-sm" onclick="resolveReport('${r.id}')">✅ Закрыть</button>
           </div>
         </div>`).join('');
-  }catch(e){c.innerHTML=`<div class="empty">❌ ${esc(e.message)}</div>`;}
-}
-async function resolveReport(id){
-  try{await adminApi('PUT',`/api/admin/reports/${id}/resolve`);toast('✅ Закрыто');loadStats();loadTab('reports');}
-  catch(e){toast('❌ '+e.message);}
+  }catch(e){
+    c.innerHTML=`<div class="empty">❌ ${esc(e.message)}</div>`;
+  }
 }
 
+async function resolveReport(id){
+  try{
+    await adminApi('PUT',`/api/admin/reports/${id}/resolve`);
+    toast('✅ Закрыто');
+    loadStats();
+    loadTab('reports');
+  }catch(e){toast('❌ '+e.message);}
+}
+
+// ========== БАН И УДАЛЕНИЕ ==========
 function renderBan(c){
   c.innerHTML=`
     <div class="sec-title">// ЗАБАНИТЬ ПОЛЬЗОВАТЕЛЯ</div>
@@ -387,6 +616,12 @@ function renderBan(c){
       <div class="field"><label>НИК</label><input class="inp" id="ban-inp" placeholder="ghost_x"></div>
       <div style="font-size:11px;color:var(--text2);margin-bottom:12px;line-height:1.7">⚠️ Бан удалит все заказы пользователя и заблокирует аккаунт.</div>
       <button class="btn btn-r" onclick="submitBan()" style="width:100%;padding:11px">⛔ ЗАБАНИТЬ</button>
+    </div>
+
+    <div class="sec-title">// РАЗБАНИТЬ ПОЛЬЗОВАТЕЛЯ</div>
+    <div style="background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:16px;margin-bottom:20px">
+      <div class="field"><label>НИК</label><input class="inp" id="unban-inp" placeholder="ghost_x"></div>
+      <button class="btn btn-g" onclick="unbanUser()" style="width:100%;padding:11px">✅ РАЗБАНИТЬ</button>
     </div>
 
     <div class="sec-title">// УДАЛИТЬ АККАУНТ</div>
@@ -397,19 +632,42 @@ function renderBan(c){
     </div>
   `;
 }
+
 async function banUser(nick){
+  if(!nick){
+    nick=document.getElementById('ban-inp')?.value.trim();
+    if(!nick){ toast('⚠️ Введи ник'); return; }
+  }
   if(!confirm(`Забанить ${nick}?`)) return;
-  try{await adminApi('POST','/api/admin/ban',{nick});toast('⛔ Забанен');loadStats();}
-  catch(e){toast('❌ '+e.message);}
+  try{
+    await adminApi('POST','/api/admin/ban',{nick});
+    toast('⛔ Забанен');
+    loadStats();
+    document.getElementById('ban-inp') && (document.getElementById('ban-inp').value='');
+  }catch(e){toast('❌ '+e.message);}
 }
+
+async function unbanUser(){
+  const nick=document.getElementById('unban-inp').value.trim();
+  if(!nick){ toast('⚠️ Введи ник'); return; }
+  if(!confirm(`Разбанить ${nick}?`)) return;
+  try{
+    await adminApi('POST','/api/admin/unban',{nick});
+    toast('✅ Разбанен');
+    document.getElementById('unban-inp').value='';
+    loadStats();
+  }catch(e){toast('❌ '+e.message);}
+}
+
 async function submitBan(){
   const nick=document.getElementById('ban-inp').value.trim();
-  if(!nick){toast('⚠️ Введи ник');return;}
+  if(!nick){ toast('⚠️ Введи ник'); return; }
   await banUser(nick);
 }
+
 async function deleteUser(){
   const nick=document.getElementById('delete-user-inp').value.trim();
-  if(!nick){toast('⚠️ Введи ник');return;}
+  if(!nick){ toast('⚠️ Введи ник'); return; }
   if(!confirm(`Удалить аккаунт ${nick} и все его данные? Это действие необратимо.`)) return;
   try{
     await adminApi('DELETE',`/api/admin/user?nick=${encodeURIComponent(nick)}`);
@@ -419,10 +677,93 @@ async function deleteUser(){
   }catch(e){toast('❌ '+e.message);}
 }
 
-function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function timeAgo(ts){const d=Date.now()-new Date(ts).getTime();if(d<60000)return 'только что';if(d<3600000)return Math.floor(d/60000)+'м назад';if(d<86400000)return Math.floor(d/3600000)+'ч назад';return Math.floor(d/86400000)+'д назад';}
+// ========== ПОИСК ==========
+function renderSearch(c){
+  c.innerHTML=`
+    <div class="sec-title">// ПОИСК ПОЛЬЗОВАТЕЛЕЙ И ШКОЛ</div>
+    <div style="background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:16px;margin-bottom:20px">
+      <div class="field"><label>ПОИСК</label>
+        <input class="inp" id="search-query" placeholder="ник, название школы, город..." onkeydown="if(event.key==='Enter')doSearch()">
+      </div>
+      <button class="btn btn-g" onclick="doSearch()" style="width:100%;padding:11px">🔍 НАЙТИ</button>
+    </div>
+    <div id="search-results"></div>
+  `;
+}
+
+async function doSearch(){
+  const query = document.getElementById('search-query').value.trim();
+  if(!query){ toast('⚠️ Введите запрос'); return; }
+  
+  const resultsDiv = document.getElementById('search-results');
+  resultsDiv.innerHTML = '<div class="loader"><span class="spin">⟳</span> поиск...</div>';
+  
+  try{
+    const results = await adminApi('GET', `/api/admin/search?q=${encodeURIComponent(query)}`);
+    
+    let html = '';
+    
+    if(results.users?.length){
+      html += `<div class="sec-title">👤 ПОЛЬЗОВАТЕЛИ (${results.users.length})</div>`;
+      html += results.users.map(u => `
+        <div class="user-card">
+          <div class="user-avatar">${esc((u.nick||'?')[0].toUpperCase())}</div>
+          <div class="user-info">
+            <div class="user-nick">${esc(u.nick)}</div>
+            <div class="user-meta">🏫 ${esc(u.school_name||'нет школы')} · 📅 ${u.created_at ? new Date(u.created_at).toLocaleDateString() : '?'}</div>
+          </div>
+          <div class="row-actions">
+            <button class="btn btn-sm" style="background:rgba(255,107,0,.1);color:var(--orange)" onclick="banUser('${esc(u.nick)}')">⛔ Бан</button>
+          </div>
+        </div>
+      `).join('');
+    }
+    
+    if(results.schools?.length){
+      html += `<div class="sec-title" style="margin-top:16px">🏫 ШКОЛЫ (${results.schools.length})</div>`;
+      html += results.schools.map(s => `
+        <div class="school-card">
+          <div class="school-ico">🏫</div>
+          <div style="flex:1">
+            <div style="font-size:13px;color:var(--text);margin-bottom:3px">${esc(s.name)}</div>
+            <div style="font-size:10px;color:var(--text2)">📍 ${s.city||'город не указан'} · 👥 ${s.members||0} участников</div>
+          </div>
+          <button class="btn btn-o btn-sm" onclick="viewSchoolUsers(${s.id},'${esc(s.name)}')">👥 Участники</button>
+        </div>
+      `).join('');
+    }
+    
+    if(!results.users?.length && !results.schools?.length){
+      html = '<div class="empty">Ничего не найдено</div>';
+    }
+    
+    resultsDiv.innerHTML = html;
+  }catch(e){
+    resultsDiv.innerHTML = `<div class="empty">❌ ${esc(e.message)}</div>`;
+  }
+}
+
+// ========== UTILS ==========
+function esc(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function timeAgo(ts){
+  const d=Date.now()-new Date(ts).getTime();
+  if(d<60000) return 'только что';
+  if(d<3600000) return Math.floor(d/60000)+'м назад';
+  if(d<86400000) return Math.floor(d/3600000)+'ч назад';
+  return Math.floor(d/86400000)+'д назад';
+}
+
 let toastT;
-function toast(msg){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove('show'),2800);}
+function toast(msg){
+  const el=document.getElementById('toast');
+  el.textContent=msg;
+  el.classList.add('show');
+  clearTimeout(toastT);
+  toastT=setTimeout(()=>el.classList.remove('show'),2800);
+}
 </script>
 </body>
 </html>
